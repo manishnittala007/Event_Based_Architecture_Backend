@@ -8,10 +8,8 @@ app.use(cors());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: false }));
 
-app.get('/status', (request, response) => response.json({ clients: clients.length }));
 const port = 3000;
 let clients = [];
-let queries = [];
 
 const connection = mysql.createConnection({
     host: 'staging-prod-db.crhg7zleeuhf.ap-south-1.rds.amazonaws.com',
@@ -72,7 +70,6 @@ async function extractDetailsFromQuery(query) {
     return { query, id, name, description, table };
 }
 
-
 async function getNameById(table, id) {
   return new Promise((resolve, reject) => {
       const query = `SELECT name, description FROM \`${table}\` WHERE id = ?`;
@@ -89,7 +86,6 @@ async function getNameById(table, id) {
       });
   });
 }
-
 
 zongji.start({
     includeEvents: ['query']
@@ -114,9 +110,10 @@ function eventsHandler(request, response, next) {
     };
     response.writeHead(200, headers);
 
-    const data = `data: ${JSON.stringify(queries)}\n\n`;
-
-    response.write(data);
+    // Fetch initial top 3 rows from the questionnaire table
+    fetchInitialRows().then(initialRows => {
+        response.write(`data: ${JSON.stringify(initialRows)}\n\n`);
+    });
 
     const clientId = Date.now();
 
@@ -133,8 +130,21 @@ function eventsHandler(request, response, next) {
     });
 }
 
-app.get('/events', eventsHandler);
+async function fetchInitialRows() {
+    return new Promise((resolve, reject) => {
+        const query = `SELECT * FROM questionnaire LIMIT 3`;
+        connection.query(query, (error, results) => {
+            if (error) {
+                console.error('Error fetching initial rows:', error);
+                return reject(error);
+            }
+            resolve(results);
+        });
+    });
+}
 
 function sendEventsToAll(newQueries) {
     clients.forEach(client => client.response.write(`data: ${JSON.stringify(newQueries)}\n\n`));
 }
+
+app.get('/events', eventsHandler);
